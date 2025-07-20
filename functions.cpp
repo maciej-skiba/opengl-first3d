@@ -1,83 +1,224 @@
-#include "functions.hpp" 
-#include "stb_image.h"
-#include "texture.hpp"
+#include "functions.hpp"
 
-void FramebufferSizeCallback(GLFWwindow* window, int width, int height)
+int numOfDimensionsInVertex = 3;
+int amountOfVerticesInTriangle = 3;
+int amountOfCircleCenterVertices = 1;
+
+int InitializeOpenGL(GLFWwindow*& window)
+{
+        /* Initialize the library */
+    if (!glfwInit())
+        return -1;
+
+    /* Create a windowed mode window and its OpenGL context */
+    window = glfwCreateWindow(640, 480, "Hello World", NULL, NULL);
+    if (!window)
+    {
+        std::cout << "Failed to create GLFW window" << std::endl;
+        glfwTerminate();
+        return -1;
+    }
+
+    /* Make the window's context current */
+    glfwMakeContextCurrent(window);
+
+    if (glewInit() != GLEW_OK)
+    {
+        std::cout << "cant load glew" << std::endl;
+    }
+
+    glViewport(0, 0, 800, 600);
+    glfwSetFramebufferSizeCallback(window, framebuffer_size_callback);
+
+    return 1;
+}
+
+void framebuffer_size_callback(GLFWwindow* window, int width, int height)
 {
     glViewport(0, 0, width, height);
 }
 
-void SetupTexture(const char* path, int &width, int &height, int &nrChannels, int colorType, bool linearFiltering)
+void processInput(GLFWwindow *window)
 {
-    // set the texture wrapping/filtering options (on the currently bound texture object)
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_REPEAT);	
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_REPEAT);
-
-    if (linearFiltering)
+    if(glfwGetKey(window, GLFW_KEY_ESCAPE) == GLFW_PRESS)
     {
-        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR_MIPMAP_LINEAR);
-        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+        glfwSetWindowShouldClose(window, true);
     }
-    else
+    if(glfwGetKey(window, GLFW_KEY_SPACE) == GLFW_PRESS)
     {
-        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST_MIPMAP_NEAREST);
-        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+        glClearColor(0.45f, 0.91f, 0.45f, 1);
     }
-
-    // load and generate the texture
-    unsigned char *data = stbi_load(path, &width, &height, &nrChannels, 0);
-    if (data)
-    {
-        glTexImage2D(GL_TEXTURE_2D, 0, colorType, width, height, 0, colorType, GL_UNSIGNED_BYTE, data);
-        glGenerateMipmap(GL_TEXTURE_2D);
-    }
-    else
-    {
-        std::cout << "Failed to load texture" << std::endl;
-    }
-
-    stbi_image_free(data);
 }
 
-void Texture::ReloadTexture(bool linFiltering)
+std::string LoadShader(const std::string& shaderPath)
 {
-    linearFiltering = linFiltering;
-    SetupTexture(_path, _width, _height, _nrChannels, _colorType, linearFiltering);
+    std::ifstream shaderFile;
+    shaderFile.exceptions(std::ifstream::failbit | std::ifstream::badbit);
+
+    try 
+    {
+        shaderFile.open(shaderPath);
+        std::stringstream shaderStream;
+        shaderStream << shaderFile.rdbuf();
+        shaderFile.close();
+        return shaderStream.str();
+    }
+    catch (std::ifstream::failure& e)
+    {
+        std::cerr << "ERROR::SHADER::FILE_NOT_SUCCESSFULLY_READ: " << e.what() << std::endl;
+        return "";
+    }
 }
 
-void ProcessInput
-    (GLFWwindow *window, Shader* shader, glm::vec3 &spinnerPosition,
-    float spinnerWidth, float &rotationDirection, std::map<int, bool> &keyPressedTrackingMap)
+void CreateCircle(
+    unsigned int &VAO, 
+    int amountOfTriangles)
+{   
+    int totalAmountOfVertices = (amountOfTriangles + amountOfCircleCenterVertices) * numOfDimensionsInVertex;
+    float circleVertices[totalAmountOfVertices];
+    float startingPoint[2] = { 0.0f, 0.0f };
+
+    CreateCircleVertices(circleVertices, startingPoint, amountOfTriangles);
+
+    //PrintArray(circleVertices, totalAmountOfVertices);
+
+    //Vertex Array Object
+    glGenVertexArrays(1, &VAO); // tworzy VAO
+    glBindVertexArray(VAO);   //aktywacja tego VAO
+    
+    //Vertex Buffer Object
+    unsigned int VBO;
+    glGenBuffers(1, &VBO); //tworzy pusty VBO
+
+    glBindBuffer(GL_ARRAY_BUFFER, VBO); //ustaw VBO jako aktywny array buffer; wszelkie rzeczy na GL_ARRAY_BUFFER będą dotyczyły obiektu VBO
+    glBufferData(GL_ARRAY_BUFFER, sizeof(circleVertices), circleVertices, GL_STATIC_DRAW); //wypełnij bufor (GPU) danymi
+
+    unsigned int elementIndices[amountOfTriangles * numOfDimensionsInVertex]; 
+    CreateCircleTriangles(elementIndices, amountOfTriangles);
+
+    unsigned int EBO;
+    glGenBuffers(1, &EBO);
+
+    glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, EBO);
+    glBufferData(GL_ELEMENT_ARRAY_BUFFER, sizeof(elementIndices), elementIndices, GL_STATIC_DRAW); 
+
+    glVertexAttribPointer(
+        0,                  // index = location w shaderze (0 dla aPos)
+        3,                  // ile wartości (vec3 → 3)
+        GL_FLOAT,           // typ danych
+        GL_FALSE,           // normalizacja
+        3 * sizeof(float),  // odstęp między kolejnymi atrybutami (stride)
+        (void*)0            // offset od początku
+    );
+    glEnableVertexAttribArray(0); //wybierz layout 0 jako aktywny
+
+    float colors[] = { 0 };
+    unsigned int VBO_colors;
+    glGenBuffers(1, &VBO_colors);
+    glBindBuffer(GL_ARRAY_BUFFER, VBO_colors); //ustaw VBO jako aktywny array buffer; wszelkie rzeczy na GL_ARRAY_BUFFER będą dotyczyły obiektu VBO
+    glBufferData(GL_ARRAY_BUFFER, sizeof(colors), colors, GL_STATIC_DRAW); //wypełnij bufor (GPU) danymi
+    
+    glVertexAttribPointer(1, 3, GL_FLOAT, GL_FALSE, sizeof(float), (void*)0);            
+}
+
+void GetCircle2DVertex(float* startingPoint, float angle, float radius, float* outputVertex)
 {
-    float movementSpeed = 0.02f;
+    float angleInRadians = angle * (M_PI / 180.0f);
 
-    if (glfwGetKey(window, GLFW_KEY_W) == GLFW_PRESS && spinnerPosition.y < 1.0f - spinnerWidth)
+    float x = radius * cos(angleInRadians);
+
+    if (abs(x) < 0.001f)
     {
-        spinnerPosition.y += movementSpeed;
+        x = 0;
     }
-    if (glfwGetKey(window, GLFW_KEY_S) == GLFW_PRESS && spinnerPosition.y > -1.0f + spinnerWidth)
+    
+    float y = radius * sin(angleInRadians);
+    
+    if (abs(y) < 0.001f)
     {
-        spinnerPosition.y -= movementSpeed;
-    }
-    if (glfwGetKey(window, GLFW_KEY_D) == GLFW_PRESS && spinnerPosition.x < 1.0f - spinnerWidth)
-    {
-        spinnerPosition.x += movementSpeed;
-    }
-    if (glfwGetKey(window, GLFW_KEY_A) == GLFW_PRESS && spinnerPosition.x > -1.0f + spinnerWidth)
-    {
-        spinnerPosition.x -= movementSpeed;
+        y = 0;
     }
 
-    // change rotation direction to opposite with GetKeyDown
-    if (glfwGetKey(window, GLFW_KEY_SPACE) == GLFW_PRESS)
+    outputVertex[0] = x + startingPoint[0];
+    outputVertex[1] = y + startingPoint[1];
+}
+
+void CreateCircleVertices(float* vertices, float* startingPoint, int amountOfTriangles)
+{
+    float tempVertex[2];
+    float deltaAngle = 360.0f / amountOfTriangles;
+
+    // Create center of the circle
+    vertices[0] = 0.0f;
+    vertices[1] = 0.0f;
+    vertices[2] = 0.0f;
+    
+    int offset = numOfDimensionsInVertex * amountOfCircleCenterVertices;
+
+    for (int point = 0; point < amountOfTriangles; point++)
     {
-        if (keyPressedTrackingMap[GLFW_KEY_SPACE] == false)
+        int triangleFirstPoint_X_index = point * numOfDimensionsInVertex + offset;
+        int triangleFirstPoint_Y_index = triangleFirstPoint_X_index + 1;
+        int triangleFirstPoint_Z_index = triangleFirstPoint_Y_index + 1;
+
+        GetCircle2DVertex(startingPoint, deltaAngle * point, 0.5f, tempVertex);  
+
+        // first vertex of the triangle (equal to second vertex of previous triangle)
+        vertices[triangleFirstPoint_X_index] = tempVertex[0];
+        vertices[triangleFirstPoint_Y_index] = tempVertex[1];
+        vertices[triangleFirstPoint_Z_index] = 0.0f;
+    }
+}
+
+void CheckShaderCompilation(unsigned int vertexShader)
+{
+    int success;
+    char infoLog[512];
+    glGetShaderiv(vertexShader, GL_COMPILE_STATUS, &success);
+
+    if(!success)
+    {
+        glGetShaderInfoLog(vertexShader, 512, NULL, infoLog);
+        std::cout << "ERROR::SHADER::VERTEX::COMPILATION_FAILED\n" << infoLog << std::endl;
+    }
+}
+
+void CheckShaderLink(unsigned int shaderProgram)
+{
+    int success;
+    char infoLog[512];
+    glGetProgramiv(shaderProgram, GL_LINK_STATUS, &success);
+
+    if(!success)
+    {
+        glGetProgramInfoLog(shaderProgram, 512, NULL, infoLog);
+        std::cout << "ERROR::SHADER::PROGRAM::LINK_FAILED\n" << infoLog << std::endl;
+    }
+}
+
+void PrintArray(float* arr, int size)
+{
+    for (int i = 0; i < size; i++)
+    {
+        std::cout << "[" << i << "]:" << arr[i] << std::endl;
+    }
+}
+
+void CreateCircleTriangles(unsigned int* elementIndices, int amountOfTriangles)
+{
+    for (int triangleIndex = 0; triangleIndex < amountOfTriangles; triangleIndex++)
+    {
+        elementIndices[triangleIndex * amountOfVerticesInTriangle] = 0;
+        elementIndices[triangleIndex * amountOfVerticesInTriangle + 1] = triangleIndex + 1;
+
+        if (triangleIndex == amountOfTriangles - 1)
         {
-            rotationDirection *= -1.0f;
-            keyPressedTrackingMap[GLFW_KEY_SPACE] = true;
+            // for the last triangle, choose point number 1 to create a full circle
+            elementIndices[triangleIndex * amountOfVerticesInTriangle + 2] = 1;
+        }
+        else
+        {
+            elementIndices[triangleIndex * amountOfVerticesInTriangle + 2] = triangleIndex + 2;
         }
     }
-    else (keyPressedTrackingMap[GLFW_KEY_SPACE] = false);
-
-    //std::cout << "x: " << spinnerPosition.x << " y: " << spinnerPosition.y << std::endl;
 }

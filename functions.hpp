@@ -2,13 +2,23 @@
 
 #include <GL/glew.h>
 #include <GLFW/glfw3.h>
+#include <glm/glm.hpp>
+#include <glm/gtc/matrix_transform.hpp>
+#include <glm/gtc/type_ptr.hpp>
 #include <iostream>
-#include <cmath>
+#include <math.h>
+#include <fstream>
+#include <sstream>
 #include "shader.hpp"
-#include <map>
 
-void FramebufferSizeCallback(GLFWwindow* window, int width, int height);
-void SetupTexture(const char* path, int &width, int &height, int &nrChannels, int colorType, bool linearFiltering);
-void ProcessInput
-    (GLFWwindow *window, Shader* shader, glm::vec3 &spinnerPosition,
-    float spinnerWidth, float &rotationDirection, std::map<int, bool> &keyPressedTrackingMap);
+int InitializeOpenGL(GLFWwindow*& window);
+void framebuffer_size_callback(GLFWwindow* window, int width, int height);
+void processInput(GLFWwindow *window);
+void CreateCircle(unsigned int &VAO, int amountOfTriangles);
+std::string LoadShader(const std::string& shaderPath);
+void CheckShaderCompilation(unsigned int vertexShader);
+void CheckShaderLink(unsigned int shaderProgram);
+void GetCircle2DVertex(float* startingPoint, float angle, float radius, float* outputVertex);
+void CreateCircleVertices(float* vertices, float* startingPoint, int amountOfTriangles);
+void PrintArray(float* arr, int size);
+void CreateCircleTriangles(unsigned int* elementIndices, int amountOfTriangles);
